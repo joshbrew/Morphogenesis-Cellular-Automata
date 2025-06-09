@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+  <!-- Joshua Brewster MIT License -->
+  <!-- Based on: Simulation of vessel morphogenesis using
+  cellular automata - Mario Markus, Dominik Bohm, Malte Schmick, 1999 -->
+<head>
+  <meta charset="UTF-8">
+  <title>CA Morphogenesis Demo (Multi-Worker)</title>
+  <style>
+    body { margin:0; display:flex; height:100vh; background:#222; color:#eee; font-family:sans-serif; }
+    #controls { width:300px; padding:1rem; background:#111; overflow-y:auto; }
+    #controls h2 { margin-top:0; }
+    .control-group { margin-bottom:0.75rem; }
+    .control-group label { display:flex; justify-content:space-between; font-size:0.9rem; }
+    .control-group input[type=range], .control-group select { width:100%; }
+    #controls button { width:100%; padding:0.5rem; margin:0.5rem 0; background:#333; border:none; color:#eee; cursor:pointer; }
+    #canvas-container { flex:1; display:flex; align-items:center; justify-content:center; }
+    canvas { image-rendering:pixelated; background:#000; width:80vmin; height:80vmin; max-width:100%; max-height:100%; }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+    <h2>Morphogenesis CA</h2>
+    <div class="control-group">
+      <label for="presetSelect">Preset:
+        <select id="presetSelect">
+          <option value="cross">Cross–Maze Style</option>
+          <option value="doubling">Cell Doubling</option>
+<!--           <option value="ginkgo">Ginkgo Leaf</option> -->
+        </select>
+      </label>
+    </div>
+
+    <!-- Grid & parameter sliders -->
+    <div class="control-group">
+      <label>Grid Resolution:<span id="gridLabel">240</span></label>
+      <input id="gridSlider" type="range" min="100" max="500" step="10" value="240">
+    </div>
+    <div class="control-group"><label>Activator Diffusion Radius:<span id="ruLabel">1</span></label><input id="ruSlider" type="range" min="1" max="15" step="1" value="1"></div>
+    <div class="control-group"><label>Inhibitor Diffusion Radius:<span id="rvLabel">7</span></label><input id="rvSlider" type="range" min="1" max="20" step="1" value="7"></div>
+    <div class="control-group"><label>Substrate Diffusion Radius:<span id="rsLabel">8</span></label><input id="rsSlider" type="range" min="1" max="20" step="1" value="8"></div>
+    <div class="control-group"><label>Production Rate (c):<span id="cLabel">1.7</span></label><input id="cSlider" type="range" min="0" max="5" step="0.1" value="1.7"></div>
+    <div class="control-group"><label>Inhibition Threshold (d):<span id="dLabel">0.5</span></label><input id="dSlider" type="range" min="0" max="5" step="0.1" value="0.5"></div>
+    <div class="control-group"><label>Activator Decay Factor (d1):<span id="d1Label">0.95</span></label><input id="d1Slider" type="range" min="0" max="1" step="0.05" value="0.95"></div>
+    <div class="control-group"><label>Activator Linear Loss (d2):<span id="d2Label">3.9</span></label><input id="d2Slider" type="range" min="0" max="5" step="0.1" value="3.9"></div>
+    <div class="control-group"><label>Inhibitor Decay Factor (d3):<span id="d3Label">0.4</span></label><input id="d3Slider" type="range" min="0" max="1" step="0.05" value="0.4"></div>
+    <div class="control-group"><label>Inhibitor Linear Loss (d4):<span id="d4Label">1.1</span></label><input id="d4Slider" type="range" min="0" max="5" step="0.1" value="1.1"></div>
+    <div class="control-group"><label>Max Activator Level:<span id="umaxLabel">500</span></label><input id="umaxSlider" type="range" min="50" max="500" step="10" value="500"></div>
+    <div class="control-group"><label>Activation Threshold:<span id="thetaLabel">90</span></label><input id="thetaSlider" type="range" min="0" max="200" step="5" value="90"></div>
+    <div class="control-group"><label>Substrate Supply Rate:<span id="aLabel">1</span></label><input id="aSlider" type="range" min="0" max="2" step="0.05" value="1"></div>
+    <div class="control-group"><label>Natural Substrate Decay:<span id="b0Label">0.7</span></label><input id="b0Slider" type="range" min="0" max="2" step="0.05" value="0.7"></div>
+    <div class="control-group"><label>Vessel Consumption Rate:<span id="b1Label">1</span></label><input id="b1Slider" type="range" min="0" max="2" step="0.1" value="1"></div>
+    <div class="control-group"><label>Loop Reconnection Leak:<span id="b2Label">0.9</span></label><input id="b2Slider" type="range" min="0" max="2" step="0.05" value="0.9"></div>
+    <div class="control-group"><label>Branching Offset:<span id="gLabel">9</span></label><input id="gSlider" type="range" min="0" max="10" step="1" value="9"></div>
+    <div class="control-group"><label>Loop Delay Steps:<span id="nLabel">130</span></label><input id="nSlider" type="range" min="0" max="500" step="10" value="130"></div>
+    <div class="control-group"><label>Brush Size:<span id="brushLabel">1</span></label><input id="brushSlider" type="range" min="1" max="50" step="1" value="1"></div>
+    <div class="control-group"><label>Seed Density:<span id="seedLabel">0.45</span></label><input id="seedSlider" type="range" min="0" max="1" step="0.05" value="0.45"></div>
+
+    <button id="drawEraseBtn">Mode: Draw</button>
+    <button id="resetBtn">Reset</button>
+    <button id="clearBtn">Clear</button>
+    <button id="randomSeedBtn">Random Seed</button>
+    <button id="randomizeParamsBtn">Randomize Params</button>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    // Canvas & context
+    const canvas = document.getElementById('canvas'),
+          ctx    = canvas.getContext('2d');
+
+    // ——————————————————————————————————————
+    // Worker-pool setup
+    // ——————————————————————————————————————
+    const workerCode = `
+      self.onmessage = function(e) {
+        const { src, offs, W, H, startRow, endRow } = e.data;
+        const len = (endRow - startRow) * W;
+        const out = new Float32Array(len);
+        let idx = 0;
+        for (let y = startRow; y < endRow; y++) {
+          for (let x = 0; x < W; x++) {
+            let sum = 0, cnt = 0;
+            for (const code of offs) {
+              const dx = code >> 16, dy = (code << 16) >> 16;
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
+                sum += src[ny*W + nx];
+                cnt++;
+              }
+            }
+            out[idx++] = sum / cnt;
+          }
+        }
+        postMessage({ out, startRow });
+      };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const poolSize = navigator.hardwareConcurrency || 4;
+    const workers = Array.from({ length: poolSize }, () => new Worker(URL.createObjectURL(blob)));
+
+    // ——————————————————————————————————————
+    // Version guard to avoid writing into resized buffers
+    // ——————————————————————————————————————
+    let version = 0;
+
+    async function diffuseParallel(src, dst, offs) {
+      const myVersion = version;
+      const rowsPer = Math.ceil(H / poolSize);
+      const tasks = workers.map((w, i) => {
+        const startRow = i * rowsPer;
+        const endRow   = Math.min(H, startRow + rowsPer);
+        return new Promise(resolve => {
+          w.onmessage = ev => {
+            // only write if no resize/reset has occurred
+            if (myVersion === version) {
+              dst.set(ev.data.out, ev.data.startRow * W);
+            }
+            resolve();
+          };
+          w.postMessage({ src, offs, W, H, startRow, endRow });
+        });
+      });
+      await Promise.all(tasks);
+    }
+
+    // CA state & params
+    let W, H, size;
+    let u, v, s, gArr, age;
+    let offU = [], offV = [], offS = [];
+    let Ru, Rv, Rs, c, d, d1, d2, d3, d4, umax, theta, a, b0, b1, b2, G, n;
+    let brushRadius, seedDensity;
+    let drawMode = true;
+
+    // UI elements
+    const presetSelect  = document.getElementById('presetSelect');
+    const gridSlider    = document.getElementById('gridSlider'),    gridLabel  = document.getElementById('gridLabel');
+    const ruSlider      = document.getElementById('ruSlider'),      ruLabel    = document.getElementById('ruLabel');
+    const rvSlider      = document.getElementById('rvSlider'),      rvLabel    = document.getElementById('rvLabel');
+    const rsSlider      = document.getElementById('rsSlider'),      rsLabel    = document.getElementById('rsLabel');
+    const cSlider       = document.getElementById('cSlider'),       cLabel     = document.getElementById('cLabel');
+    const dSlider       = document.getElementById('dSlider'),       dLabel     = document.getElementById('dLabel');
+    const d1Slider      = document.getElementById('d1Slider'),      d1Label    = document.getElementById('d1Label');
+    const d2Slider      = document.getElementById('d2Slider'),      d2Label    = document.getElementById('d2Label');
+    const d3Slider      = document.getElementById('d3Slider'),      d3Label    = document.getElementById('d3Label');
+    const d4Slider      = document.getElementById('d4Slider'),      d4Label    = document.getElementById('d4Label');
+    const umaxSlider    = document.getElementById('umaxSlider'),    umaxLabel  = document.getElementById('umaxLabel');
+    const thetaSlider   = document.getElementById('thetaSlider'),   thetaLabel = document.getElementById('thetaLabel');
+    const aSlider       = document.getElementById('aSlider'),       aLabel     = document.getElementById('aLabel');
+    const b0Slider      = document.getElementById('b0Slider'),      b0Label    = document.getElementById('b0Label');
+    const b1Slider      = document.getElementById('b1Slider'),      b1Label    = document.getElementById('b1Label');
+    const b2Slider      = document.getElementById('b2Slider'),      b2Label    = document.getElementById('b2Label');
+    const gSlider       = document.getElementById('gSlider'),       gLabel     = document.getElementById('gLabel');
+    const nSlider       = document.getElementById('nSlider'),       nLabel     = document.getElementById('nLabel');
+    const brushSlider   = document.getElementById('brushSlider'),   brushLabel = document.getElementById('brushLabel');
+    const seedSlider    = document.getElementById('seedSlider'),    seedLabel  = document.getElementById('seedLabel');
+
+    const drawEraseBtn  = document.getElementById('drawEraseBtn');
+    const resetBtn      = document.getElementById('resetBtn');
+    const clearBtn      = document.getElementById('clearBtn');
+    const randomSeedBtn = document.getElementById('randomSeedBtn');
+    const randomizeBtn  = document.getElementById('randomizeParamsBtn');
+
+    // precompute offsets
+    function makeOffsets(R) {
+      const out = [], r2 = R*R;
+      for (let dx = -R; dx <= R; dx++) {
+        for (let dy = -R; dy <= R; dy++) {
+          if (dx*dx + dy*dy <= r2) out.push((dx<<16) | (dy & 0xffff));
+        }
+      }
+      return out;
+    }
+
+    function readParams() {
+      W = H = parseInt(gridSlider.value, 10);
+      gridLabel.textContent = W;
+      Ru = parseFloat(ruSlider.value); ruLabel.textContent = Ru;
+      Rv = parseFloat(rvSlider.value); rvLabel.textContent = Rv;
+      Rs = parseFloat(rsSlider.value); rsLabel.textContent = Rs;
+      c  = parseFloat(cSlider.value);  cLabel.textContent  = c;
+      d  = parseFloat(dSlider.value);  dLabel.textContent  = d;
+      d1 = parseFloat(d1Slider.value); d1Label.textContent = d1;
+      d2 = parseFloat(d2Slider.value); d2Label.textContent = d2;
+      d3 = parseFloat(d3Slider.value); d3Label.textContent = d3;
+      d4 = parseFloat(d4Slider.value); d4Label.textContent = d4;
+      umax   = parseFloat(umaxSlider.value);   umaxLabel.textContent   = umax;
+      theta  = parseFloat(thetaSlider.value);  thetaLabel.textContent  = theta;
+      a      = parseFloat(aSlider.value);      aLabel.textContent      = a;
+      b0     = parseFloat(b0Slider.value);     b0Label.textContent     = b0;
+      b1     = parseFloat(b1Slider.value);     b1Label.textContent     = b1;
+      b2     = parseFloat(b2Slider.value);     b2Label.textContent     = b2;
+      G      = parseFloat(gSlider.value);      gLabel.textContent      = G;
+      n      = parseInt(nSlider.value, 10);    nLabel.textContent      = n;
+      brushRadius = parseInt(brushSlider.value, 10);  brushLabel.textContent = brushRadius;
+      seedDensity = parseFloat(seedSlider.value);     seedLabel.textContent  = seedDensity;
+
+      offU = makeOffsets(Ru);
+      offV = makeOffsets(Rv);
+      offS = makeOffsets(Rs);
+
+      canvas.width  = W;
+      canvas.height = H;
+      size = W * H;
+    }
+
+    function init() {
+      u    = new Float32Array(size);
+      v    = new Float32Array(size);
+      s    = new Float32Array(size).fill(1);
+      gArr = new Uint8Array(size);
+      age  = new Uint16Array(size);
+      // initial seed in center
+      const mid = Math.floor(H/2)*W + Math.floor(W/2);
+      u[mid] = umax + 50;
+    }
+
+    function randomSeed() {
+      for (let i = 0; i < size; i++) {
+        if (Math.random() < seedDensity) u[i] = umax;
+      }
+    }
+
+    function randomizeParams() {
+      document.querySelectorAll('#controls input[type=range]').forEach(sl => {
+        const min = +sl.min, max = +sl.max, step = +sl.step;
+        sl.value = min + step * Math.floor(Math.random() * (((max - min)/step) + 1));
+      });
+      readParams();
+      init();
+    }
+
+    function setCrossPreset(){
+      version++;
+      presetSelect.value = 'cross';
+      gridSlider.value = 240; ruSlider.value = 1; rvSlider.value = 7; rsSlider.value = 8;
+      cSlider.value=1.7; dSlider.value=0.5; d1Slider.value=0.95; d2Slider.value=3.9;
+      d3Slider.value=0.4; d4Slider.value=1.1; umaxSlider.value=500; thetaSlider.value=90;
+      aSlider.value=1; b0Slider.value=0.7; b1Slider.value=1; b2Slider.value=0.9;
+      gSlider.value=9; nSlider.value=130; brushSlider.value=1; seedSlider.value=0.45;
+      readParams(); init();
+    }
+
+    function setDoublingPreset(){
+      version++;
+      presetSelect.value = 'doubling';
+      gridSlider.value = 240; ruSlider.value=3; rvSlider.value=7; rsSlider.value=8;
+      cSlider.value=1.7; dSlider.value=0.5; d1Slider.value=0.95; d2Slider.value=3.9;
+      d3Slider.value=0.4; d4Slider.value=1.1; umaxSlider.value=370; thetaSlider.value=90;
+      aSlider.value=1; b0Slider.value=0.7; b1Slider.value=1; b2Slider.value=0.9;
+      gSlider.value=9; nSlider.value=130; brushSlider.value=1; seedSlider.value=0.45;
+      readParams(); init();
+    }
+
+    function setGinkgoPreset(){
+      version++;
+      presetSelect.value = 'ginkgo';
+      gridSlider.value = 300; ruSlider.value=3; rvSlider.value=8; rsSlider.value=6;
+      cSlider.value=2.7; dSlider.value=2; d1Slider.value=0.9; d2Slider.value=1;
+      d3Slider.value=0.5; d4Slider.value=2; umaxSlider.value=250; thetaSlider.value=70;
+      aSlider.value=0.2; b0Slider.value=0.2; b1Slider.value=1; b2Slider.value=0.2;
+      gSlider.value=0; nSlider.value=0; brushSlider.value=1; seedSlider.value=0.005;
+      readParams(); init();
+    }
+
+    // Draw / Erase toggle
+    drawEraseBtn.addEventListener('click', () => {
+      drawMode = !drawMode;
+      drawEraseBtn.textContent = 'Mode: ' + (drawMode ? 'Draw' : 'Erase');
+    });
+
+    // Brush drawing
+    let drawing = false;
+    canvas.addEventListener('mousedown', () => drawing = true);
+    canvas.addEventListener('mouseup',   () => drawing = false);
+    canvas.addEventListener('mouseleave',() => drawing = false);
+    canvas.addEventListener('mousemove', e => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) * (W / rect.width));
+      const y = Math.floor((e.clientY - rect.top)  * (H / rect.height));
+      const r2 = brushRadius * brushRadius;
+      for (let dy = -brushRadius; dy <= brushRadius; dy++) {
+        for (let dx = -brushRadius; dx <= brushRadius; dx++) {
+          if (dx*dx + dy*dy <= r2) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
+              u[ny*W + nx] = drawMode ? umax : 0;
+            }
+          }
+        }
+      }
+    });
+
+    // Slider listeners: grid triggers full re-init, others just update params
+    const allSliders = document.querySelectorAll('#controls input[type=range]');
+    allSliders.forEach(sl => {
+      if (sl === gridSlider) {
+        sl.addEventListener('input', () => {
+          readParams();
+          version++;
+          init();
+          draw();
+        });
+      } else {
+        sl.addEventListener('input', readParams);
+      }
+    });
+
+    presetSelect.addEventListener('change', () => {
+      switch(presetSelect.value) {
+        case 'cross':    setCrossPreset();    break;
+        case 'doubling': setDoublingPreset(); break;
+        case 'ginkgo':   setGinkgoPreset();   break;
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      version++;
+      init();
+    });
+    clearBtn.addEventListener('click', () => {
+      version++;
+      u.fill(0);
+      v.fill(0);
+      s.fill(1);
+      gArr.fill(0);
+      age.fill(0);
+      draw();
+    });
+    randomSeedBtn.addEventListener('click', () => {
+      version++;
+      randomSeed();
+    });
+    randomizeBtn.addEventListener('click', () => {
+      version++;
+      randomizeParams();
+    });
+
+    // CA step & draw
+    async function step(){
+      const u5 = new Float32Array(size),
+            v3 = new Float32Array(size),
+            s2 = new Float32Array(size);
+      for (let i = 0; i < size; i++){
+        const U = u[i], V = v[i], S = s[i];
+        let u1 = (U > d*V ? c*U*S : U);
+        u1 = Math.min(u1, umax);
+        const u2 = Math.max(0, d1*u1 - d2);
+        const v2 = Math.max(0, d3*V - d4);
+        v3[i] = c*u2 + v2;
+        if (u2 > theta && gArr[i] === 0) { gArr[i] = 1; age[i] = 0; }
+        if (gArr[i] === 1) age[i]++;
+        let s1 = S + a - (gArr[i] ? b1 : b0)*S;
+        if (gArr[i] === 1 && age[i] > n) s1 -= (b2 - b1)*S;
+        s2[i] = s1;
+        u5[i] = u2 - (gArr[i] ? G : 0);
+      }
+      await diffuseParallel(u5, u, offU);
+      await diffuseParallel(v3, v, offV);
+      await diffuseParallel(s2, s, offS);
+    }
+
+    function draw(){
+      const img = ctx.createImageData(W, H);
+      for (let i = 0; i < size; i++){
+        const b = Math.floor(255 * Math.min(1, u[i] / umax));
+        img.data[4*i]   = b;
+        img.data[4*i+1] = b;
+        img.data[4*i+2] = b;
+        img.data[4*i+3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function run(){
+      step().then(() => {
+        draw();
+        requestAnimationFrame(run);
+      });
+    }
+
+    // startup
+    setCrossPreset();
+    init();
+    draw();
+    requestAnimationFrame(run);
+  </script>
+
+</body>
+</html>
