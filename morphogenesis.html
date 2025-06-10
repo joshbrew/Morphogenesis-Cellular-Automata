@@ -2,9 +2,7 @@
 <html lang="en">
 <!-- Joshua Brewster MIT License -->
 <!-- Based on: Simulation of vessel morphogenesis using
-       cellular automata – Markus, Böhm & Schmick, 1999
-       The grid resolution dependent behaviors are  apparently intentional so it's a bit finicky.
--->
+       cellular automata – Markus, Böhm & Schmick, 1999 -->
 
 <head>
   <meta charset="UTF-8">
@@ -98,6 +96,7 @@
       </label>
     </div>
 
+
     <!-- Grid & parameter sliders -->
     <div class="control-group">
       <label>Grid Resolution:<span id="gridLabel">240</span></label>
@@ -113,7 +112,6 @@
       <input id="rsSlider" type="range" min="1" max="20" step="1" value="8">
     </div>
 
-    <!-- NEW: Optional long-range inhibitor controls -->
     <hr>
     <div class="control-group">
       <label><input id="wEnable" type="checkbox"> Enable 2nd inhibitor w</label>
@@ -182,12 +180,27 @@
       <input id="seedSlider" type="range" min="0" max="1" step="0.05" value="0.45">
     </div>
 
+
+    <div class="control-group">
+      <label>
+        <input type="checkbox" id="laplacianToggle">
+        Use 9-point Laplacian
+      </label>
+    </div>
+    <div class="control-group">
+      <label for="diffRateSlider">Diffusion Rate (Laplacian) (D): <span id="diffRateLabel">0.20</span></label>
+      <input id="diffRateSlider" type="range" min="0.00" max="1.00" step="0.01" value="0.50">
+    </div>
+
+
+
     <button id="drawEraseBtn">Mode: Draw</button>
     <button id="resetBtn">Reset</button>
     <button id="clearBtn">Clear</button>
     <button id="randomSeedBtn">Random Seed</button>
     <button id="randomizeParamsBtn">Randomize Params</button>
   </div>
+
 
   <div id="canvas-container">
     <canvas id="canvas"></canvas>
@@ -222,15 +235,26 @@
         });
       }
 
+      const diffRateSlider = document.getElementById('diffRateSlider');
+      const diffRateLabel = document.getElementById('diffRateLabel');
+      diffRateSlider.oninput = () => {
+        diffRateLabel.textContent = parseFloat(diffRateSlider.value).toFixed(2);
+      };
+
+
       // ——————————————————————————————————————
       // 1) Diffusion Compute Pipeline
       // ——————————————————————————————————————
       const diffShader = `
 struct Params {
-  width: u32,
-  height: u32,
+  width:     u32,
+  height:    u32,
   offsCount: u32,
-  _pad:    u32,
+  mode:      u32,
+  diffRate:  f32,
+  _pad0:     f32,
+  _pad1:     f32,
+  _pad2:     f32,   
 };
 
 @group(0) @binding(0) var<storage,read>        src  : array<f32>;
@@ -242,26 +266,70 @@ struct Params {
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let x = gid.x;
   let y = gid.y;
-  if (x >= p.width || y >= p.height) {
-    return;
-  };
-  let idx: u32 = y * p.width + x;
-  var sum: f32 = 0.0;
-  var cnt: u32 = 0u;
-  for (var i: u32 = 0u; i < p.offsCount; i = i + 1u) {
-    let code: u32 = offs[i];
-    let dx: i32 = i32(code) >> 16;
-    let dy: i32 = i32(code << 16) >> 16;
-    let nx: i32 = i32(x) + dx;
-    let ny: i32 = i32(y) + dy;
-    if (nx >= 0 && nx < i32(p.width) && ny >= 0 && ny < i32(p.height)) {
-      let nidx: u32 = u32(ny) * p.width + u32(nx);
-      sum = sum + src[nidx];
-      cnt = cnt + 1u;
-    };
-  };
-  dst[idx] = sum / f32(cnt);
-};
+  if (x >= p.width || y >= p.height) { return; }
+  let idx = y * p.width + x;
+
+  if (p.mode == 0u) {
+    // ——— original radius-based average ———
+    var sum: f32 = 0.0;
+    var cnt: u32 = 0u;
+    for (var i: u32 = 0u; i < p.offsCount; i = i + 1u) {
+      let code = offs[i];
+      let dx   = i32(code) >> 16;
+      let dy   = i32(code << 16) >> 16;
+      let nx   = i32(x) + dx;
+      let ny   = i32(y) + dy;
+      if (nx >= 0 && nx < i32(p.width) && ny >= 0 && ny < i32(p.height)) {
+        let nidx = u32(ny) * p.width + u32(nx);
+        sum = sum + src[nidx];
+        cnt = cnt + 1u;
+      }
+    }
+    dst[idx] = sum / f32(cnt);
+
+  } else {
+    // ——— 9-point Laplacian stencil ———
+    let u0 = src[idx];
+
+    // clamp at edges:
+    let xm = select(0u,     x - 1u, x > 0u);
+    let xp = select(p.width - 1u, x + 1u, x + 1u < p.width);
+    let ym = select(0u,     y - 1u, y > 0u);
+    let yp = select(p.height - 1u, y + 1u, y + 1u < p.height);
+
+    // neighbour indices
+    let iN  = ym * p.width + x;
+    let iS  = yp * p.width + x;
+    let iW  = y  * p.width + xm;
+    let iE  = y  * p.width + xp;
+    let iNW = ym * p.width + xm;
+    let iNE = ym * p.width + xp;
+    let iSW = yp * p.width + xm;
+    let iSE = yp * p.width + xp;
+
+    // fetch
+    let uN  = src[iN];
+    let uS  = src[iS];
+    let uW  = src[iW];
+    let uE  = src[iE];
+    let uNW = src[iNW];
+    let uNE = src[iNE];
+    let uSW = src[iSW];
+    let uSE = src[iSE];
+
+    // 9-point Laplacian: (4*(N+S+E+W) + (NE+NW+SE+SW) - 20*u0)/6
+    let lap = (
+     4.0*(uN + uS + uE + uW)
+   +    (uNE + uNW + uSE + uSW)
+   - 20.0*u0
+) * (1.0 / 6.0);
+
+// scale by a small diffusion coefficient:
+let D: f32 = p.diffRate;              // tweak this between 0.05 and 0.5
+dst[idx] = u0 + D * lap;
+  }
+}
+
 `;
       const diffMod = device.createShaderModule({ code: diffShader });
       const diffPipe = device.createComputePipeline({
@@ -269,7 +337,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         compute: { module: diffMod, entryPoint: 'main' }
       });
       const diffParamsBuf = device.createBuffer({
-        size: 16,
+        size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
       });
       function makeOffsets(R) {
@@ -290,7 +358,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         queue.writeBuffer(srcBuf, 0, srcArr);
         queue.writeBuffer(offsBuf, 0, offsArr);
-        queue.writeBuffer(diffParamsBuf, 0, new Uint32Array([W, H, offsArr.length, 0]));
+        const laplacianToggle = document.getElementById('laplacianToggle');
+
+        // pack uniforms: width, height, offsCount, mode, diffRate, padding…
+        const uniformData = new ArrayBuffer(32);
+        const dv = new DataView(uniformData);
+        dv.setUint32(0, W, true);
+        dv.setUint32(4, H, true);
+        dv.setUint32(8, offsArr.length, true);
+        dv.setUint32(12, laplacianToggle.checked ? 1 : 0, true);
+        dv.setFloat32(16, parseFloat(diffRateSlider.value), true);
+        // remaining 16 bytes are zero by default
+
+        queue.writeBuffer(diffParamsBuf, 0, uniformData);
+
+
 
         const bg = device.createBindGroup({
           layout: diffPipe.getBindGroupLayout(0),
