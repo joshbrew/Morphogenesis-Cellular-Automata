@@ -6,7 +6,11 @@ Uses WebGPU compute shaders, <1ms frame time at base resolution. Would be fun to
 ## [Try it](https://codepen.io/mootytootyfrooty/pen/OPVxPxp)
 
 Even does Belousov-Zhabotinsky oscillations: 
-https://github.com/user-attachments/assets/47b98621-b6de-49b1-a022-e9ef97e2dbac
+
+
+https://github.com/user-attachments/assets/af9e816c-52a6-43d1-a9a9-7983b7ac3740
+
+
 
 Otherwise it does bifurcation, snowflakes, mitosis - you name it. 
 ![image](https://github.com/user-attachments/assets/ed39406c-4a3a-4649-9145-d33a675cc640)
