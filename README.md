@@ -5,7 +5,7 @@ Uses WebGPU compute shaders, <1ms frame time at base resolution. Would be fun to
 
 ## [Try it](https://codepen.io/mootytootyfrooty/pen/OPVxPxp)
 
-Even does Belousov-Zhabotinsky oscillations: 
+Even does Belousov-Zhabotinsky oscillations (I lost the preset, though ;-;): 
 
 
 https://github.com/user-attachments/assets/af9e816c-52a6-43d1-a9a9-7983b7ac3740
