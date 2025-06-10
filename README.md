@@ -1,7 +1,7 @@
 # Morphogenesis-Cellular-Automata
 Based on: Simulation of vessel morphogenesis using cellular automata - Mario Markus, Dominik Bohm, Malte Schmick, 1999
 
-Uses WebGPU compute shaders, <1ms frame time at base resolution. Would be fun to make a 3D raymarched version for a volumetric sim, or competing different spawns with different parameters against each other to see what patterns emerge.
+Uses WebGPU compute shaders, <1ms frame time at base resolution. Would be fun to make a 3D raymarched version for a volumetric sim, or competing different spawns with different parameters against each other to see what patterns emerge. If you find any cool presets, reach out so I can update the list: brewster.joshua1@gmail.com
 
 ## [Try it](https://codepen.io/mootytootyfrooty/pen/OPVxPxp)
 
